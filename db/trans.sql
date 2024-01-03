@@ -1,0 +1,365 @@
+USE NhaKhoa
+GO
+
+--Dang Nhap 
+CREATE PROC SP_DANGNHAP
+    @MATK VARCHAR(10),
+    @MATKHAU VARCHAR(20)
+AS
+BEGIN TRAN
+DECLARE @ROLE VARCHAR(5)
+IF EXISTS (SELECT 1
+FROM BenhNhan
+WHERE SODT = @MATK AND MATKHAU = @MATKHAU)
+BEGIN
+    PRINT('HI')
+    SET @ROLE = 'BN'
+END
+ELSE IF EXISTS (SELECT 1
+FROM BacSi
+WHERE IDBS= @MATK AND MATKHAU = @MATKHAU)
+BEGIN
+    SET @ROLE = 'BS'
+END
+ELSE IF EXISTS (SELECT 1
+FROM NhanVien
+WHERE IDNV= @MATK AND MATKHAU = @MATKHAU)
+BEGIN
+    SET @ROLE = 'NV'
+END
+ELSE IF EXISTS (SELECT 1
+FROM Ad
+WHERE IDAD= @MATK AND MATKHAU = @MATKHAU)
+BEGIN
+    SET @ROLE = 'AD'
+END
+ELSE
+BEGIN
+    RAISERROR(N'Tài khoản hoặc mật khẩu không đúng.', 16, 1);
+    ROLLBACK TRAN
+    RETURN
+END
+SELECT ROLE = @ROLE
+COMMIT TRAN 
+GO
+--Tao Cakham 
+-- 1. Xem toàn bộ thuốc
+CREATE PROC SP_XEMTOANBOTHUOC
+AS
+BEGIN TRAN
+BEGIN TRY
+		SELECT *
+FROM Thuoc
+	END TRY
+	BEGIN CATCH
+		ROLLBACK TRAN;
+		DECLARE @errorMessage NVARCHAR(200) = ERROR_MESSAGE();
+		THROW 51000, @errorMessage, 1;
+		RETURN
+	END CATCH
+COMMIT TRAN 
+GO
+
+-- 2. Xem toàn bộ dịch vụ 
+CREATE PROC SP_XEMTOANBODICHVU
+AS
+BEGIN TRAN
+BEGIN TRY
+		SELECT *
+FROM DichVu
+	END TRY
+	BEGIN CATCH
+		ROLLBACK TRAN;
+		DECLARE @errorMessage NVARCHAR(200) = ERROR_MESSAGE();
+		THROW 51000, @errorMessage, 1;
+		RETURN
+	END CATCH
+COMMIT TRAN
+GO
+
+--3. Xem toàn bộ bác sĩ
+CREATE PROC SP_XEMTOANBOBACSI
+AS
+BEGIN TRAN
+BEGIN TRY
+		SELECT BS.IDBS, BS.HOTEN, BS.PHAI, BS.DIACHI
+FROM BacSi BS
+	END TRY
+	BEGIN CATCH
+		ROLLBACK TRAN;
+		DECLARE @errorMessage NVARCHAR(200) = ERROR_MESSAGE();
+		THROW 51000, @errorMessage, 1;
+		RETURN
+	END CATCH
+COMMIT TRAN
+go
+--4. xem danh sach nhan vien 
+CREATE PROC SP_xemtoanbonhanvien
+AS
+BEGIN TRAN
+BEGIN TRY 
+	SELECT NV.IDNV, NV.HOTEN, NV.PHAI
+FROM NhanVien NV 
+	END TRY 
+	BEGIN CATCH 
+	ROLLBACK TRAN; 
+	DECLARE @errorMessage NVARCHAR(200) = ERROR_MESSAGE(); 
+	THROW 51000,@errorMessage,1; 
+	RETURN 
+	END CATCH
+COMMIT TRAN 
+GO
+--5. xem danh sach ADmin 
+CREATE PROC SP_xemtoanboadmin
+AS
+BEGIN TRAN
+BEGIN TRY
+        IF EXISTS (SELECT 1
+FROM Ad)
+        BEGIN
+    SELECT Ad.IDAD, Ad.HOTEN
+    FROM Ad
+END
+        ELSE
+        BEGIN
+    RAISERROR(N'Không tồn tại quản trị viên nào', 16, 1)
+    ROLLBACK TRAN
+    RETURN
+END
+    END TRY
+
+    BEGIN CATCH
+        ROLLBACK TRAN
+        DECLARE @errorMessage NVARCHAR(200) = ERROR_MESSAGE();
+		THROW 51000, @errorMessage, 1;
+		RETURN
+    END CATCH
+COMMIT TRAN
+GO
+
+--6.them dich vụ admin 
+CREATE PROC SP_themdichvu
+    @TENDV NVARCHAR(50),
+    @SODT VARCHAR(10),
+    @MOTA NVARCHAR(500),
+    @DONGIA FLOAT,
+    @SOLUONG INT
+AS
+BEGIN
+    DECLARE @NewIDDV VARCHAR(10);
+
+    BEGIN TRAN
+    BEGIN TRY
+        IF @DONGIA <= 0 OR @SOLUONG <= 0
+        BEGIN
+        RAISERROR(N'Đơn giá và số lượng phải lớn hơn 0', 16, 1)
+        ROLLBACK TRAN
+        RETURN
+    END
+
+        SELECT @NewIDDV = COALESCE(MAX(IDDV), 'DV001')
+    FROM DichVu;
+        SET @NewIDDV = 'DV' + RIGHT('000' + CAST(CAST(RIGHT(@NewIDDV, 3) AS INT) + 1 AS VARCHAR(3)), 3);
+        INSERT INTO DichVu
+        (IDDV, TENDV, SODT, MOTA, DONGIA, SOLUONG)
+    VALUES
+        (@NewIDDV, @TENDV, @SODT, @MOTA, @DONGIA, @SOLUONG);
+    END TRY 
+    BEGIN CATCH 
+        ROLLBACK TRAN;
+        DECLARE @errorMessage NVARCHAR(200) = ERROR_MESSAGE();
+        THROW 51000, @errorMessage, 1
+        RETURN
+    END CATCH
+    COMMIT TRAN
+END;
+GO
+--7. capnhatdichvu 
+CREATE PROC SP_capnhatdichvu
+    @IDDV VARCHAR(10),
+    @SODT VARCHAR(10),
+    @TENDV NVARCHAR(50),
+    @MOTA NVARCHAR(500),
+    @DONGIA FLOAT,
+    @SOLUONG INT
+AS
+BEGIN
+    BEGIN TRAN
+    BEGIN TRY
+        IF NOT EXISTS (SELECT 1
+    FROM DichVu
+    WHERE IDDV = @IDDV AND SODT = @SODT)
+        BEGIN
+        RAISERROR(N'Dịch vụ không tồn tại', 16, 1)
+        ROLLBACK TRAN
+        RETURN
+    END
+        IF @TENDV IS NULL OR @MOTA IS NULL OR @DONGIA <= 0 OR @SOLUONG IS NULL
+        BEGIN
+        RAISERROR(N'Tên dịch vụ, mô tả, đơn giá và số lượng không được NULL; đơn giá phải lớn hơn 0', 16, 1)
+        ROLLBACK TRAN
+        RETURN
+    END
+		IF @TENDV IS NOT NULL OR @MOTA IS NOT NULL OR @DONGIA > 0 OR @SOLUONG IS NOT NULL
+        UPDATE DichVu
+        SET TENDV = @TENDV,
+            MOTA = @MOTA,
+            DONGIA = @DONGIA,
+            SOLUONG = @SOLUONG
+        WHERE IDDV = @IDDV AND SODT = @SODT;
+    END TRY 
+    BEGIN CATCH 
+        ROLLBACK TRAN;
+        DECLARE @errorMessage NVARCHAR(200) = ERROR_MESSAGE();
+        THROW 51000, @errorMessage, 1
+        RETURN
+    END CATCH
+    COMMIT TRAN
+END;
+GO
+--8 them tai khoan benh nhan 
+CREATE PROCEDURE SP_THEMTAIKHOANBENHNHAN
+    @SODT VARCHAR(10),
+    @HOTEN NVARCHAR(50),
+    @PHAI NVARCHAR(5),
+    @NGAYSINH DATE,
+    @DIACHI NVARCHAR(250),
+    @MATKHAU VARCHAR(20)
+AS
+BEGIN
+    BEGIN TRAN
+    BEGIN TRY
+        IF EXISTS (SELECT 1
+    FROM BenhNhan
+    WHERE SODT = @SODT)
+        BEGIN
+        RAISERROR(N'Tài khoản bệnh nhân đã tồn tại', 16, 1)
+        ROLLBACK TRAN
+        RETURN
+    END
+        IF @SODT IS NULL OR @HOTEN IS NULL OR @PHAI IS NULL OR @NGAYSINH IS NULL OR @DIACHI IS NULL OR @MATKHAU IS NULL
+        BEGIN
+        RAISERROR(N'Tất cả các trường dữ liệu không được NULL', 16, 1)
+        ROLLBACK TRAN
+        RETURN
+    END
+        INSERT INTO BenhNhan
+        (SODT, HOTEN, PHAI, NGAYSINH, DIACHI, MATKHAU)
+    VALUES
+        (@SODT, @HOTEN, @PHAI, @NGAYSINH, @DIACHI, @MATKHAU);
+    END TRY 
+    BEGIN CATCH 
+        ROLLBACK TRAN;
+        DECLARE @errorMessage NVARCHAR(200) = ERROR_MESSAGE();
+        THROW 51000, @errorMessage, 1
+        RETURN
+    END CATCH
+    COMMIT TRAN
+END;
+GO
+
+--9 xem thong tin benh nhan 
+CREATE PROCEDURE SP_XEMTHONGTINBENHNHAN
+    @SODT VARCHAR(10)
+AS
+BEGIN
+    IF NOT EXISTS (SELECT 1
+    FROM BenhNhan
+    WHERE SODT = @SODT)
+    BEGIN
+        RAISERROR(N'Tài khoản bệnh nhân không tồn tại', 16, 1)
+        RETURN
+    END
+    SELECT SODT, HOTEN, PHAI, NGAYSINH, DIACHI
+    FROM BenhNhan
+    WHERE SODT = @SODT;
+END;
+GO
+
+--10 them benh an 
+CREATE PROCEDURE SP_THEMBENHAN
+    @SODT VARCHAR(10),
+    @NGAYKHAM DATE,
+    @GhiChuCuaBacSi NVARCHAR(500),
+    @IDBS VARCHAR(10)
+AS
+BEGIN
+    IF @NGAYKHAM IS NULL
+    BEGIN
+        RAISERROR('Ngày khám không được để trống.', 16, 1);
+        RETURN;
+    END
+    INSERT INTO BenhAn
+        (SODT, NGAYKHAM, GhiChuCuaBacSi, IDBS, _DAXUATHOADON)
+    VALUES
+        (@SODT, @NGAYKHAM, @GhiChuCuaBacSi, @IDBS, 0);
+END;
+GO
+
+--11 Xem Benh an 
+
+CREATE PROCEDURE SP_XEMBENHAN
+    @SODT VARCHAR(10)
+AS
+BEGIN
+    SELECT *
+    FROM BenhAn
+    WHERE SODT = @SODT;
+END;
+GO
+--12 Xoa Benh An 
+CREATE PROCEDURE SP_XOABENHAN
+    @SODT VARCHAR(10)
+AS
+BEGIN
+    IF NOT EXISTS (SELECT 1
+    FROM BenhAn
+    WHERE SODT = @SODT)
+    BEGIN
+        PRINT 'Bệnh án không tồn tại.';
+        RETURN;
+    END
+    DELETE FROM BenhAn WHERE SODT = @SODT;
+END; 
+GO
+
+--13 xem lich hen 
+
+CREATE PROC SP_XEMLICHHEN
+    @SDT VARCHAR(10)
+AS
+BEGIN TRAN
+BEGIN TRY
+        IF EXISTS(SELECT 1
+FROM BenhNhan
+WHERE SODT = @SDT)
+        BEGIN
+    SELECT BS.IDBS , BS.HOTEN, LL.GIOBATDAU, LL.GIOKETTHUC, CK.TRANGTHAI
+    FROM BenhNhan BN JOIN CaKham CK ON BN.SODT = CK.SODT
+        JOIN BacSi BS ON CK.IDBS = BS.IDBS
+        JOIN LichLam LL ON CK.IDBS = LL.IDBS
+    WHERE BN.SODT = @SDT
+END
+        ELSE
+        BEGIN
+    RAISERROR(N'Không tồn tại mã khách hàng này.', 16, 1);
+    ROLLBACK TRAN
+    RETURN
+END
+    END TRY
+    BEGIN CATCH
+        ROLLBACK TRAN
+        DECLARE @errorMessage NVARCHAR(200) = ERROR_MESSAGE();
+        THROW 51000, @errorMessage, 1;
+        RETURN
+    END CATCH
+COMMIT TRAN
+GO 
+
+--
+
+
+
+
+
+
